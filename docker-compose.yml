@@ -1,0 +1,33 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  rate-limiter:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    env_file:
+      - .env.local
+    volumes:
+      - ./config:/app/config
+    develop:
+      watch:
+        - action: rebuild
+          path: ./cmd
+
+
+volumes:
+  redis-data:

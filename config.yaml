@@ -1,0 +1,28 @@
+rate_limits:
+  default:
+    algorithm: token_bucket
+    capacity: 100
+    refill_rate: 10  # tokens per second
+    expiration: 3600
+
+  free:
+    algorithm: token_bucket
+    requests_per_minute: 60
+    requests_per_hour: 1000
+    capacity: 10
+
+  premium:
+    algorithm: token_bucket
+    requests_per_minute: 600
+    requests_per_hour: 20000
+    capacity: 100
+
+  enterprise:
+    algorithm: leaky_bucket
+    requests_per_minute: 6000
+    requests_per_hour: 500000
+    capacity: 1000
+
+metrics:
+  enabled: true
+  path: "/metrics"
