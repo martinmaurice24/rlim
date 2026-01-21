@@ -77,18 +77,18 @@ func TestGetConfig_IsParsingValid(t *testing.T) {
 		},
 		"leaky_bucket": []RateLimiterConfig{
 			{
-				ID:          "rpm",
-				Algorithm:   enum.LeakyBucket,
-				Capacity:    10,
-				ConsumeRate: 1,
-				Expiration:  3600,
+				ID:         "rpm",
+				Algorithm:  enum.LeakyBucket,
+				Capacity:   10,
+				LeakRate:   1,
+				Expiration: 3600,
 			},
 			{
-				ID:          "rph",
-				Algorithm:   enum.LeakyBucket,
-				Capacity:    10,
-				ConsumeRate: 0.2777777777777778,
-				Expiration:  3600,
+				ID:         "rph",
+				Algorithm:  enum.LeakyBucket,
+				Capacity:   10,
+				LeakRate:   0.2777777777777778,
+				Expiration: 3600,
 			},
 		},
 		"token_bucket": []RateLimiterConfig{

@@ -31,11 +31,11 @@ type rateLimiterRawConfig struct {
 type rawConfig struct {
 	RateLimits struct {
 		Default struct {
-			Algorithm   string
-			Capacity    int
-			RefillRate  *float64 `mapstructure:"refill_rate"`
-			ConsumeRate *float64 `mapstructure:"consume_rate"`
-			Expiration  int
+			Algorithm  string
+			Capacity   int
+			RefillRate *float64 `mapstructure:"refill_rate"`
+			LeakRate   *float64 `mapstructure:"leak_rate"`
+			Expiration int
 		}
 		Items *map[string]rateLimiterRawConfig
 	} `mapstructure:"rate_limits"`
@@ -54,12 +54,12 @@ func loadRawConfig() (*rawConfig, error) {
 }
 
 type RateLimiterConfig struct {
-	ID          string
-	Algorithm   enum.Algorithm
-	Capacity    int
-	RefillRate  float64 // Token Bucket Specific
-	ConsumeRate float64 // Leaky Bucket Specific
-	Expiration  int
+	ID         string
+	Algorithm  enum.Algorithm
+	Capacity   int
+	RefillRate float64 // Token Bucket Specific
+	LeakRate   float64 // Leaky Bucket Specific
+	Expiration int
 }
 
 func (r RateLimiterConfig) validate() error {
@@ -76,8 +76,8 @@ func (r RateLimiterConfig) validate() error {
 	}
 
 	if r.Algorithm == enum.LeakyBucket {
-		if r.ConsumeRate <= 0 {
-			return errors.New("rate limiter consume_rate must not be less than or equal to zero")
+		if r.LeakRate <= 0 {
+			return errors.New("rate limiter leak_rate must not be less than or equal to zero")
 		}
 	}
 
@@ -119,7 +119,7 @@ func parseRateLimiterConfig(rlCfg rateLimiterRawConfig) []RateLimiterConfig {
 		expiration   = rlCfg.Expiration
 	)
 
-	createNewRateLimiter := func(id string, refillOrConsumeRate float64) RateLimiterConfig {
+	createNewRateLimiter := func(id string, refillOrLeakRate float64) RateLimiterConfig {
 		rateLimitConfig := RateLimiterConfig{
 			ID:         id,
 			Algorithm:  algorithm,
@@ -128,22 +128,22 @@ func parseRateLimiterConfig(rlCfg rateLimiterRawConfig) []RateLimiterConfig {
 		}
 
 		if algorithm == enum.TokenBucket {
-			rateLimitConfig.RefillRate = refillOrConsumeRate
+			rateLimitConfig.RefillRate = refillOrLeakRate
 		} else if algorithm == enum.LeakyBucket {
-			rateLimitConfig.ConsumeRate = refillOrConsumeRate
+			rateLimitConfig.LeakRate = refillOrLeakRate
 		}
 
 		return rateLimitConfig
 	}
 
 	if rlCfg.RequestsPerMinute != nil {
-		refillOrConsumeRate := float64(*rlCfg.RequestsPerMinute) / minuteInSeconds
-		rateLimiters = append(rateLimiters, createNewRateLimiter(requestPerMinRateLimiterKey, refillOrConsumeRate))
+		refillOrLeakRate := float64(*rlCfg.RequestsPerMinute) / minuteInSeconds
+		rateLimiters = append(rateLimiters, createNewRateLimiter(requestPerMinRateLimiterKey, refillOrLeakRate))
 	}
 
 	if rlCfg.RequestsPerHour != nil {
-		refillOrConsumeRate := float64(*rlCfg.RequestsPerHour) / hourInSeconds
-		rateLimiters = append(rateLimiters, createNewRateLimiter(requestPerHourRateLimiterKey, refillOrConsumeRate))
+		refillOrLeakRate := float64(*rlCfg.RequestsPerHour) / hourInSeconds
+		rateLimiters = append(rateLimiters, createNewRateLimiter(requestPerHourRateLimiterKey, refillOrLeakRate))
 	}
 
 	return rateLimiters
@@ -186,10 +186,10 @@ func parseDefaultRateLimiterConfig(rc *rawConfig) (*RateLimiterConfig, error) {
 		defaultRateLimiter.RefillRate = *rc.RateLimits.Default.RefillRate
 
 	} else if defaultAlgorithm == enum.LeakyBucket {
-		if rc.RateLimits.Default.ConsumeRate == nil {
-			return nil, errors.New("you must specify the consume_rate for the default rate limiter")
+		if rc.RateLimits.Default.LeakRate == nil {
+			return nil, errors.New("you must specify the leak_rate for the default rate limiter")
 		}
-		defaultRateLimiter.ConsumeRate = *rc.RateLimits.Default.ConsumeRate
+		defaultRateLimiter.LeakRate = *rc.RateLimits.Default.LeakRate
 	}
 
 	return &defaultRateLimiter, nil
