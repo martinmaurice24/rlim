@@ -7,100 +7,141 @@ import (
 	"time"
 )
 
-var (
-	onceMemoryStorage     = &sync.Once{}
-	memoryStorageInstance Storer
-)
-
 type MemoryStorage struct {
-	mu          *sync.Mutex
-	db          map[string]any
-	requestCost float64
+	mu           *sync.Mutex
+	db           map[string]any
+	expirationDb map[int64][]string
+	requestCost  float64
 }
 
 type tokenBucket struct {
-	lastRefill int64
-	tokens     float64
+	lastRefillUnixNano  int64
+	bucketSize          float64
+	expiredAtInUnixNano int64
 }
 
 type leakyBucket struct {
-	lastConsume int64
-	tokens      float64
+	lastLeakUnixNano    int64
+	bucketSize          float64
+	expiredAtInUnixNano int64
 }
 
 func NewMemoryStorage() Storer {
-	onceMemoryStorage.Do(func() {
-		memoryStorageInstance = &MemoryStorage{
-			db:          make(map[string]any),
-			mu:          &sync.Mutex{},
-			requestCost: 1.0,
+	return &MemoryStorage{
+		db:           make(map[string]any),
+		expirationDb: make(map[int64][]string),
+		mu:           &sync.Mutex{},
+		requestCost:  1.0,
+	}
+}
+func (m *MemoryStorage) removeExpiredBucket(tickerDuration time.Duration, stop <-chan bool) {
+	go func() {
+		ticker := time.NewTicker(tickerDuration)
+		for {
+			select {
+			case <-ticker.C:
+				m.mu.Lock()
+				for expiredAt, expiredKeys := range m.expirationDb {
+					if time.Now().UnixNano() < expiredAt {
+						continue
+					}
+					for _, key := range expiredKeys {
+						delete(m.db, key)
+					}
+				}
+				m.mu.Unlock()
+			case <-stop:
+				ticker.Stop()
+				return
+			}
 		}
-	})
-	return memoryStorageInstance
+	}()
 }
 
-func (m *MemoryStorage) CheckAndUpdateTokenBucket(key string, capacity int, refillRate float64, expiration int) (bool, error) {
+func (m *MemoryStorage) CheckAndUpdateTokenBucket(
+	key string,
+	capacity int,
+	refillRate float64,
+	expiresIn time.Duration,
+) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var (
 		now               = time.Now().UnixNano()
-		updateTokenBucket = func(newTokens float64) {
-			m.db[key] = tokenBucket{
-				lastRefill: now,
-				tokens:     newTokens,
+		updateTokenBucket = func(bucketSize float64, setExpiration bool) {
+			bucket := tokenBucket{
+				lastRefillUnixNano: now,
+				bucketSize:         bucketSize,
 			}
+			if setExpiration {
+				bucket.expiredAtInUnixNano = time.Now().Add(expiresIn).UnixNano()
+			}
+			m.db[key] = bucket
+			m.expirationDb[bucket.expiredAtInUnixNano] = append(m.expirationDb[bucket.expiredAtInUnixNano], key)
 		}
 	)
-	slog.Debug("get bucket", "key", key)
+
+	slog.Debug("looking for bucket with", "key", key)
 	match, ok := m.db[key].(tokenBucket)
 	if !ok { // if no token_bucket match the key create one
-		newTokens := float64(capacity) - m.requestCost
-		slog.Debug("Creating new token bucket", "key", key, "tokens", newTokens)
-		updateTokenBucket(newTokens) // remove the cost of the ongoing request
+		bucketSize := float64(capacity) - m.requestCost
+		slog.Debug("creating new token bucket", "key", key, "bucketSize", bucketSize)
+		updateTokenBucket(bucketSize, true) // remove the cost of the ongoing request
 		return true, nil
 	}
 
-	timeElapsedSinceLastRefill := time.Now().Sub(time.Unix(0, match.lastRefill)).Seconds()
-	tokensToRefill := timeElapsedSinceLastRefill * refillRate
-	newTokens := math.Min(float64(capacity), tokensToRefill+match.tokens)
+	elapsedSecondsSinceLastRefill := math.Round(time.Now().Sub(time.Unix(0, match.lastRefillUnixNano)).Seconds())
+	tokensToRefill := elapsedSecondsSinceLastRefill * refillRate
+	bucketSize := math.Min(float64(capacity), tokensToRefill+match.bucketSize)
 
-	if newTokens > m.requestCost {
-		slog.Debug("Refilling token bucket", "key", key, "tokens", newTokens)
-		updateTokenBucket(newTokens - m.requestCost)
+	if bucketSize >= m.requestCost {
+		slog.Debug("refilling token bucket", "key", key, "bucketSize", bucketSize)
+		updateTokenBucket(bucketSize-m.requestCost, false)
 		return true, nil
 	}
 
 	return false, nil
 }
 
-func (m *MemoryStorage) CheckAndUpdateLeakyBucket(key string, maxTokens int, consumeRate float64, expiration int) (bool, error) {
+func (m *MemoryStorage) CheckAndUpdateLeakyBucket(
+	key string,
+	maxTokens int,
+	leakRate float64,
+	expiresIn time.Duration,
+) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var (
 		now               = time.Now().UnixNano()
-		updateLeakyBucket = func(newTokens float64) {
-			m.db[key] = leakyBucket{
-				lastConsume: now,
-				tokens:      newTokens,
+		updateLeakyBucket = func(bucketSize float64, setExpiration bool) {
+			bucket := leakyBucket{
+				lastLeakUnixNano: now,
+				bucketSize:       bucketSize,
 			}
+
+			if setExpiration {
+				bucket.expiredAtInUnixNano = time.Now().Add(expiresIn).UnixNano()
+			}
+			m.db[key] = bucket
 		}
 	)
 
+	slog.Debug("looking for bucket with", "key", key)
 	match, ok := m.db[key].(leakyBucket)
 	if !ok { // if no leaky_bucket match the key create one
-		newTokens := m.requestCost
-		slog.Debug("Creating new leaky bucket", "key", key, "tokens", newTokens)
-		updateLeakyBucket(newTokens) // add the cost of the ongoing request
+		bucketSize := m.requestCost
+		slog.Debug("creating new leaky bucket", "key", key, "bucketSize", bucketSize)
+		updateLeakyBucket(bucketSize, true)
 		return true, nil
 	}
 
-	timeElapsedSinceLastConsume := time.Now().Sub(time.Unix(0, match.lastConsume)).Seconds()
-	tokensToConsume := timeElapsedSinceLastConsume * consumeRate
-	newTokens := math.Max(0, match.tokens-tokensToConsume)
+	elapsedSecondsSinceLastLeak := math.Round(time.Now().Sub(time.Unix(0, match.lastLeakUnixNano)).Seconds())
+	nbTokensToLeak := elapsedSecondsSinceLastLeak * leakRate
+	bucketSize := math.Max(0, match.bucketSize-nbTokensToLeak)
 
-	if newTokens+m.requestCost < float64(maxTokens) {
-		slog.Debug("Consuming tokens in the leaky bucket", "key", key, "tokens", newTokens)
-		updateLeakyBucket(newTokens - m.requestCost)
+	if n := bucketSize + m.requestCost; n <= float64(maxTokens) {
+		slog.Debug("leaking tokens", "key", key, "bucketSize", bucketSize)
+		updateLeakyBucket(n, false)
 		return true, nil
 	}
 

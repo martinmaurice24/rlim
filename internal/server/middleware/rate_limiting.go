@@ -8,7 +8,7 @@ import (
 )
 
 type RateLimitMiddlewareServicer interface {
-	CheckRateLimit(key string, tier string) bool
+	CheckRateLimit(key string, tier string) (string, bool)
 }
 
 const (
@@ -18,7 +18,7 @@ const (
 )
 
 func checkRateLimit(servicer RateLimitMiddlewareServicer, key, rateLimiterId string) bool {
-	ok := servicer.CheckRateLimit(key, rateLimiterId)
+	_, ok := servicer.CheckRateLimit(key, rateLimiterId)
 	if ok {
 		slog.Info("Request allowed", "key", key, "rate_limiter_id", rateLimiterId)
 		return true

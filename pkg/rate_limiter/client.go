@@ -6,10 +6,11 @@ import (
 	"github/martinmaurice/rlim/pkg/enum"
 	"log"
 	"log/slog"
+	"time"
 )
 
 type Servicer interface {
-	CheckRateLimit(key string, rateLimitersId string) bool
+	CheckRateLimit(key string, rateLimitersId string) (string, bool)
 	GetRate(key string) (Rate, error)
 }
 
@@ -20,7 +21,6 @@ type rateLimiterWithID struct {
 
 type Client struct {
 	rateStorage  Storer
-	rateLimiter  RateLimiter
 	cfg          *config.Config
 	rateLimiters map[string][]rateLimiterWithID
 }
@@ -39,13 +39,13 @@ func (c *Client) newRateLimiter(rateLimiterConfig config.RateLimiterConfig) Rate
 		return NewTokenBucket(c.rateStorage, &TokenBucket{
 			Capacity:   rateLimiterConfig.Capacity,
 			RefillRate: rateLimiterConfig.RefillRate,
-			Expiration: rateLimiterConfig.Expiration,
+			ExpiresIn:  time.Second * time.Duration(rateLimiterConfig.Expiration),
 		})
 	case enum.LeakyBucket:
 		return NewLeakyBucket(c.rateStorage, &LeakyBucket{
-			MaxTokens:   rateLimiterConfig.Capacity,
-			ConsumeRate: rateLimiterConfig.ConsumeRate,
-			Expiration:  rateLimiterConfig.Expiration,
+			Capacity:  rateLimiterConfig.Capacity,
+			LeakRate:  rateLimiterConfig.LeakRate,
+			ExpiresIn: time.Second * time.Duration(rateLimiterConfig.Expiration),
 		})
 
 	default:
@@ -80,16 +80,21 @@ func (c *Client) checkRateLimit(key string, rateLimiter RateLimiter) bool {
 	return true
 }
 
-func (c *Client) CheckRateLimit(key, rateLimitersId string) bool {
+func (c *Client) CheckRateLimit(key, rateLimitersId string) (string, bool) {
+	if key == "" || rateLimitersId == "" {
+		return "", true
+	}
+
+	finalKeyPrefix := fmt.Sprintf("%s:%s", key, rateLimitersId)
 	for _, rl := range c.rateLimiters[rateLimitersId] {
-		finalKey := fmt.Sprintf("%s:%s", key, rl.id)
+		finalKey := fmt.Sprintf("%s:%s", finalKeyPrefix, rl.id)
 		slog.Info("checking rate limit", "key", finalKey, "rateLimitersId", rateLimitersId)
 		if c.checkRateLimit(finalKey, rl.rl) == false {
-			return false
+			return finalKeyPrefix, false
 		}
 	}
 
-	return true
+	return finalKeyPrefix, true
 }
 
 func (c *Client) GetRate(key string) (Rate, error) {
