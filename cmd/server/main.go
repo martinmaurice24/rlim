@@ -38,7 +38,7 @@ func main() {
 	}
 
 	envObj := env.GetEnv()
-	slog.Info(fmt.Sprintf("env file %s loaded\nVersion:%d\nEnv:%s", envFilePath, envObj.Version, envObj.Env))
+	slog.Info("Env loaded", "envFilePath", envFilePath, "envVersion", envObj.Version, "Environment", envObj.Env)
 
 	rateLimiter := rate_limiter.New()
 
