@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github/martinmaurice/rlim/internal/server/middleware"
 	"github/martinmaurice/rlim/pkg/env"
 	"github/martinmaurice/rlim/pkg/rate_limiter"
@@ -64,12 +65,16 @@ func (s *Config) Run() {
 		s.handler.Use(middleware.RateLimitAuthenticatedUserBasedOnTierMiddleware(s.servicer))
 	}
 
-	s.handler.POST("/check", CheckHandler(s.servicer)) // Check if request is allowed, consume token if yes
-	s.handler.GET("/status/:id", GetStatusByIdHandler)
-	s.handler.DELETE("/reset/:id", DeleteRateByIdHandler)
-	s.handler.POST("/configure", UpdateRateConfigHandler)
-	s.handler.GET("/health", HealthHandler)
-	s.handler.GET("/metrics", MetricHandler)
+	s.handler.GET("/health", func(c *gin.Context) {
+		reqArrivalTime, exists := c.Get(middleware.ReqArrivalTimeContextValueKey)
+		if exists {
+			queueTime := time.Since(reqArrivalTime.(time.Time)).Microseconds()
+			slog.Info("Queue Time (ms)", "queueTime", queueTime)
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true})
+	})
+
+	s.handler.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	srv := &http.Server{
 		Addr:           s.port,
