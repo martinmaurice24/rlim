@@ -7,7 +7,8 @@ type User struct {
 	Tier   string
 }
 
-// @todo this is for testing purpose, I will move this in env file later
+// This is for demo purpose
+// In production you must not store your api keys here
 var users = []User{
 	{"live-is-easy-and-hard", "free"},
 	{"fight-for-freedom", "premium"},
