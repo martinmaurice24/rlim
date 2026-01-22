@@ -2,7 +2,7 @@ package config
 
 import (
 	"errors"
-	"fmt"
+	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
 	"github/martinmaurice/rlim/pkg/enum"
 	"github/martinmaurice/rlim/pkg/env"
@@ -20,24 +20,31 @@ const (
 	defaultRateLimiterKey        = "default"
 )
 
+var (
+	RawConfigStructValidationErr             = errors.New("config validation error")
+	FileReadErr                              = errors.New("failed to read the config file")
+	MissingRefillRateInDefaultRateLimiterErr = errors.New("you must specify the refill_rate for the default rate limiter")
+	MissingLeakRateInDefaultRateLimiterErr   = errors.New("you must specify the leak_rate for the default rate limiter")
+)
+
 type rateLimiterRawConfig struct {
-	Algorithm         string
-	RequestsPerMinute *int `mapstructure:"requests_per_minute"`
-	RequestsPerHour   *int `mapstructure:"requests_per_hour"`
-	Capacity          int  `mapstructure:"capacity"`
-	Expiration        int  `mapstructure:"expiration"`
+	Algorithm         string `validate:"required,oneof=token_bucket leaky_bucket"`
+	RequestsPerMinute *int   `mapstructure:"requests_per_minute" validate:"required_without=RequestsPerHour"`
+	RequestsPerHour   *int   `mapstructure:"requests_per_hour" validate:"required_without=RequestsPerMinute"`
+	Capacity          int    `mapstructure:"capacity" validate:"required"`
+	Expiration        int    `mapstructure:"expiration" validate:"required"`
 }
 
 type rawConfig struct {
 	RateLimits struct {
 		Default struct {
-			Algorithm  string
-			Capacity   int
-			RefillRate *float64 `mapstructure:"refill_rate"`
-			LeakRate   *float64 `mapstructure:"leak_rate"`
-			Expiration int
-		}
-		Items *map[string]rateLimiterRawConfig
+			Algorithm  string   `validate:"required,oneof=token_bucket leaky_bucket"`
+			Capacity   int      `validate:"required"`
+			RefillRate *float64 `mapstructure:"refill_rate" validate:"required_if=Algorithm token_bucket"`
+			LeakRate   *float64 `mapstructure:"leak_rate" validate:"required_if=Algorithm leaky_bucket"`
+			Expiration int      `validate:"required"`
+		} `mapstructure:"default"`
+		Items map[string]rateLimiterRawConfig `validate:"dive,required"`
 	} `mapstructure:"rate_limits"`
 	Metrics *struct {
 		Enabled *bool
@@ -50,6 +57,12 @@ func loadRawConfig() (*rawConfig, error) {
 	if err := viper.Unmarshal(&rc); err != nil {
 		return nil, err
 	}
+
+	validate := validator.New()
+	if err := validate.Struct(rc); err != nil {
+		return nil, errors.Join(RawConfigStructValidationErr, err)
+	}
+
 	return &rc, nil
 }
 
@@ -60,34 +73,6 @@ type RateLimiterConfig struct {
 	RefillRate float64 // Token Bucket Specific
 	LeakRate   float64 // Leaky Bucket Specific
 	Expiration int
-}
-
-func (r RateLimiterConfig) validate() error {
-	if r.ID == "" {
-		return errors.New("rate limiter id is required")
-	}
-
-	if r.Expiration <= 0 {
-		return errors.New("rate limiter expiration must not be less than or equal to zero")
-	}
-
-	if r.Capacity <= 0 {
-		return errors.New("rate limiter capacity must not be less than or equal to zero")
-	}
-
-	if r.Algorithm == enum.LeakyBucket {
-		if r.LeakRate <= 0 {
-			return errors.New("rate limiter leak_rate must not be less than or equal to zero")
-		}
-	}
-
-	if r.Algorithm == enum.TokenBucket {
-		if r.RefillRate <= 0 {
-			return errors.New("rate limiter refill_rate must not be less than or equal to zero")
-		}
-	}
-
-	return nil
 }
 
 type metricConfig struct {
@@ -181,13 +166,13 @@ func parseDefaultRateLimiterConfig(rc *rawConfig) (*RateLimiterConfig, error) {
 
 	if defaultAlgorithm == enum.TokenBucket {
 		if rc.RateLimits.Default.RefillRate == nil {
-			return nil, errors.New("you must specify the refill_rate for the default rate limiter")
+			return nil, MissingRefillRateInDefaultRateLimiterErr
 		}
 		defaultRateLimiter.RefillRate = *rc.RateLimits.Default.RefillRate
 
 	} else if defaultAlgorithm == enum.LeakyBucket {
 		if rc.RateLimits.Default.LeakRate == nil {
-			return nil, errors.New("you must specify the leak_rate for the default rate limiter")
+			return nil, MissingLeakRateInDefaultRateLimiterErr
 		}
 		defaultRateLimiter.LeakRate = *rc.RateLimits.Default.LeakRate
 	}
@@ -205,14 +190,16 @@ func parseRawConfig(rc *rawConfig) (*Config, error) {
 		defaultRateLimiterKey: {*defaultRateLimiter},
 	}
 
-	for k, rateLimiterCfg := range *rc.RateLimits.Items {
-		var (
-			rateLimiters []RateLimiterConfig
-		)
+	if rc.RateLimits.Items != nil {
+		for k, rateLimiterCfg := range rc.RateLimits.Items {
+			var (
+				rateLimiters []RateLimiterConfig
+			)
 
-		rateLimiters = parseRateLimiterConfig(rateLimiterCfg)
-		if len(rateLimiters) > 0 {
-			rateLimitersMap[k] = rateLimiters
+			rateLimiters = parseRateLimiterConfig(rateLimiterCfg)
+			if len(rateLimiters) > 0 {
+				rateLimitersMap[k] = rateLimiters
+			}
 		}
 	}
 
@@ -232,18 +219,18 @@ var (
 	configInstance *Config
 )
 
-func newConfig() (*Config, error) {
+func newConfig(configFilePath string) (*Config, error) {
 	slog.Info("loading config")
-	viper.SetConfigFile(env.GetEnv().ConfigFile)
+	viper.SetConfigFile(configFilePath)
 	viper.SetConfigType("yaml")
 
 	if err := viper.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("fatal error config file: %w", err)
+		return nil, errors.Join(FileReadErr, err)
 	}
 
 	rawConfig, err := loadRawConfig()
 	if err != nil {
-		return nil, fmt.Errorf("unable to read raw config, %v", err)
+		return nil, err
 	}
 
 	return parseRawConfig(rawConfig)
@@ -252,10 +239,15 @@ func newConfig() (*Config, error) {
 func GetConfig() *Config {
 	once.Do(func() {
 		var err error
-		configInstance, err = newConfig()
+		configInstance, err = newConfig(env.GetEnv().ConfigFile)
 		if err != nil {
 			log.Fatalf("Could not create new config err: %v", err)
 		}
 	})
 	return configInstance
+}
+
+func resetConfigForTests() {
+	once = sync.Once{}
+	configInstance = nil
 }
