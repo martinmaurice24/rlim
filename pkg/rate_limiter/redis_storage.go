@@ -7,7 +7,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github/martinmaurice/rlim/pkg/enum"
 	"github/martinmaurice/rlim/pkg/env"
-	"log/slog"
 	"os"
 	"time"
 )
@@ -108,16 +107,4 @@ func (r *RedisStorage) CheckAndUpdateLeakyBucket(key string, capacity int, leakR
 
 	fmt.Printf("[Leakybucket] resetAt: %v, ok: %v - bucketSize: %v\n", expiresIn, ok, remainingTokens)
 	return ok > 0, nil
-}
-
-func (r *RedisStorage) GetRateByKey(key string) (Rate, error) {
-	var res Rate
-	err := r.dB.HGetAll(context.Background(), key).Scan(&res)
-	slog.Info(fmt.Sprintf("Entity found: %+v", res))
-	return res, err
-}
-
-func (r *RedisStorage) DeleteRateByKey(key string) error {
-	//TODO implement me
-	panic("implement me")
 }

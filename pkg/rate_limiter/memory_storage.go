@@ -147,13 +147,3 @@ func (m *MemoryStorage) CheckAndUpdateLeakyBucket(
 
 	return false, nil
 }
-
-func (m *MemoryStorage) GetRateByKey(key string) (Rate, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MemoryStorage) DeleteRateByKey(key string) error {
-	//TODO implement me
-	panic("implement me")
-}

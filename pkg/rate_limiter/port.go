@@ -9,6 +9,4 @@ type RateLimiter interface {
 type Storer interface {
 	CheckAndUpdateTokenBucket(key string, capacity int, refillRate float64, expiresIn time.Duration) (bool, error)
 	CheckAndUpdateLeakyBucket(key string, capacity int, leakRate float64, expiresIn time.Duration) (bool, error)
-	GetRateByKey(string) (Rate, error)
-	DeleteRateByKey(string) error
 }

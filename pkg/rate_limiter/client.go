@@ -11,7 +11,6 @@ import (
 
 type Servicer interface {
 	CheckRateLimit(key string, rateLimitersId string) (string, bool)
-	GetRate(key string) (Rate, error)
 }
 
 type rateLimiterWithID struct {
@@ -95,8 +94,4 @@ func (c *Client) CheckRateLimit(key, rateLimitersId string) (string, bool) {
 	}
 
 	return finalKeyPrefix, true
-}
-
-func (c *Client) GetRate(key string) (Rate, error) {
-	return c.rateStorage.GetRateByKey(key)
 }
