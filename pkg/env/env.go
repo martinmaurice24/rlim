@@ -33,7 +33,7 @@ var (
 func GetEnv() *Specification {
 	once.Do(func() {
 		slog.Info("initializing env...")
-		err := envconfig.Process("app", &envInstance)
+		err := envconfig.Process("rlim", &envInstance)
 		if err != nil {
 			log.Fatal(err.Error())
 		}

@@ -10,10 +10,10 @@ import (
 )
 
 func setRequiredEnvVars(t *testing.T) {
-	t.Setenv("APP_ENV", "test")
-	t.Setenv("APP_VERSION", "1")
-	t.Setenv("APP_REDIS_ADDR", "localhost")
-	t.Setenv("APP_CONFIG_FILE", "./test/config.yaml")
+	t.Setenv("RLIM_ENV", "test")
+	t.Setenv("RLIM_VERSION", "1")
+	t.Setenv("RLIM_REDIS_ADDR", "localhost")
+	t.Setenv("RLIM_CONFIG_FILE", "./test/config.yaml")
 }
 
 func TestGetConfig_IsSingletonAndConcurrentSafe(t *testing.T) {
