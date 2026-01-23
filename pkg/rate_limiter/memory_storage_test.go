@@ -304,24 +304,28 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		defer func() {
 			stop <- true
 		}()
-		storage.removeExpiredBucket(time.Millisecond*100, stop)
+
+		storage.removeExpiredBucket(time.Millisecond*10, stop)
 
 		key := "token:expired"
 		capacity := 1
 		refillRate := 0.0
-		expiresIn := time.Millisecond * 50
+		expiresIn := time.Millisecond * 10
 
 		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, expiresIn)
 		require.NoError(t, err)
 		assert.True(t, ok, "Request should success")
 
+		storage.mu.Lock()
 		bucket, _ := storage.db[key].(tokenBucket)
-		assert.Equal(t, 0.0, bucket.bucketSize, "Bucket size should be incremented")
+		storage.mu.Unlock()
+		assert.Equal(t, 0.0, bucket.bucketSize, "Bucket size should be decremented")
 
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 10)
 
-		_, ok = storage.db[key]
-		assert.False(t, ok, "Bucket was removed because it expired")
+		storage.mu.Lock()
+		assert.Nil(t, storage.db[key], "Bucket was removed because it expired")
+		storage.mu.Unlock()
 
 		ok, err = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, expiresIn)
 		require.NoError(t, err)
