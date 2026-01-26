@@ -68,6 +68,16 @@ func getBucketSize(t *testing.T, mr *miniredis.Miniredis, key string) float64 {
 	return bucketSize
 }
 
+func assertNotAllowed(t *testing.T, ok bool, err error, message string) {
+	require.NoError(t, err)
+	assert.False(t, ok, message)
+}
+
+func assertAllowed(t *testing.T, ok bool, err error, message string) {
+	require.NoError(t, err)
+	assert.True(t, ok, message)
+}
+
 func TestRedisStorage_CheckAndUpdateLeakyBucket(t *testing.T) {
 	var (
 		capacity  = 2
@@ -229,8 +239,7 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 
 		// Should allow request when bucketSize exactly equals requestCost
 		ok, err := storage.CheckAndUpdateTokenBucket(key, 10, 1.0, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok, "Should allow request when bucketSize exactly equals requestCost")
+		assertAllowed(t, ok, err, "Should allow request when bucketSize exactly equals requestCost")
 
 		// Verify bucketSize were consumed
 		assertBucketSize(t, mr, key, 0.0, "bucketSize should be 0 after consuming exactly 1.0")
@@ -244,8 +253,7 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 		refillRate := 10.0 // 10 bucketSize per second
 
 		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok, "First request should succeed")
+		assertAllowed(t, ok, err, "First request should succeed")
 
 		// Rapid sequential requests without time gap
 		successCount := 1
@@ -275,12 +283,9 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 
 		mr, storage := newTestRedisStorage(t, db)
 
-		// Request should succeed
 		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "Request should succeed")
 
-		// bucketSize should be capped at capacity-1 (after consuming 1)
 		bucketSize := getBucketSize(t, mr, key)
 		assert.LessOrEqual(t, bucketSize, float64(capacity), "bucketSize should not exceed capacity")
 	})
@@ -300,20 +305,14 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 			},
 		})
 
-		// First request
 		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "First request must be allowed given current config")
 
-		// Second request
 		ok, err = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "Second request must be allowed given current config")
 
-		// Third request should fail - no refill happened
 		ok, err = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
-		require.NoError(t, err)
-		assert.False(t, ok, "Should deny request when refill rate is 0")
+		assertNotAllowed(t, ok, err, "Should deny request when refill rate is 0")
 	})
 
 	t.Run("Concurrent requests - race condition test", func(t *testing.T) {
@@ -355,12 +354,9 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 
 		// WHEN we check request allowance with given config on top
 		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, expiresIn)
-		require.NoError(t, err)
+		assertAllowed(t, ok, err, "Request should success")
 
-		// THEN the request is allowed and the bucket is empty and will never be refilled as refillRate equal 0.0
-		assert.True(t, ok, "Request should success")
-
-		// AND the bucket which initially contains 1 token is left with no tokens
+		// The bucket which initially contains 1 token is left with no tokens
 		assertBucketSize(t, mr, key, 0.0, "Bucket size should be decremented")
 
 		// GIVEN a bucket with Key config to expires
@@ -377,8 +373,7 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 
 		// AND when we check the request allowance again, it allowed for the same reason describe on top
 		ok, err = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, expiresIn)
-		require.NoError(t, err)
-		assert.True(t, ok, "Request should success because previous bucket was removed")
+		assertAllowed(t, ok, err, "Request should success because previous bucket was removed")
 	})
 }
 
@@ -400,8 +395,7 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 
 		// WHEN we check for the request allowance
 		ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok, "Should allow request when result equals capacity")
+		assertAllowed(t, ok, err, "Should allow request when result equals capacity")
 
 		// THEN bucket size must have been incremented with one token
 		assertBucketSize(t, mr, key, 2.0, "Should increment the bucket size")
@@ -414,24 +408,20 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		maxTokens := 5
 		leakRate := 0.5 // 0.5 tokens per second
 
-		// First request - creates bucket with 1 token
 		ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "First request - creates bucket with 1 token")
 
 		assertBucketSize(t, mr, key, 1.0, "First request should add 1 token")
 
 		// Second request immediately
 		ok, err = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "")
 
 		assertBucketSize(t, mr, key, 2.0, "Second request should increase to 2 bucketSize")
 
 		// Third request
 		ok, err = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "")
 
 		assertBucketSize(t, mr, key, 3.0, "Third request should increase to 3 bucketSize")
 	})
@@ -454,8 +444,7 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		// After 1 second, 2 tokens should have leaked
 		// So bucket should have 3 tokens, allowing a request
 		ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok, "Request should succeed after leak drains bucket")
+		assertAllowed(t, ok, err, "Request should succeed after leak drains bucket")
 
 		// A request being allowed the bucket is filled with one more token
 		assertBucketSize(t, mr, key, 4.0, "Bucket should have ~4 bucketSize after leak and request")
@@ -478,8 +467,7 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 
 		// After 10 seconds with leak rate 10, all bucketSize should have leaked
 		ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "")
 
 		assertBucketSize(t, mr, key, 1.0, "bucketSize should never be negative")
 	})
@@ -501,18 +489,15 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 
 		// First request
 		ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "")
 
 		// Second request
 		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "")
 
 		// Third request should fail - bucket full and no leak
 		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.False(t, ok, "Should deny request when bucket is full and leak rate is 0")
+		assertNotAllowed(t, ok, err, "Should deny request when bucket is full and leak rate is 0")
 	})
 
 	t.Run("Concurrent requests - race condition test", func(t *testing.T) {
@@ -555,22 +540,18 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 
 		// Fill bucket
 		ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "")
 
 		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.True(t, ok)
+		assertAllowed(t, ok, err, "")
 
 		// Bucket should be full now
 		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
-		require.NoError(t, err)
-		assert.False(t, ok, "Bucket should be full")
+		assertNotAllowed(t, ok, err, "Bucket should be full")
 
 		// Even after short wait, minimal leak occurred
 		time.Sleep(10 * time.Millisecond)
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, 0)
-		require.NoError(t, err)
-		assert.False(t, ok, "Bucket should still be full with slow leak rate")
+		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		assertNotAllowed(t, ok, err, "Bucket should still be full with slow leak rate")
 	})
 }
