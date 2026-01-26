@@ -14,13 +14,13 @@ type MemoryStorage struct {
 	requestCost  float64
 }
 
-type tokenBucket struct {
+type memoryTokenBucket struct {
 	lastRefillUnixNano  int64
 	bucketSize          float64
 	expiredAtInUnixNano int64
 }
 
-type leakyBucket struct {
+type memoryLeakyBucket struct {
 	lastLeakUnixNano    int64
 	bucketSize          float64
 	expiredAtInUnixNano int64
@@ -69,7 +69,7 @@ func (m *MemoryStorage) CheckAndUpdateTokenBucket(
 	var (
 		now               = time.Now().UnixNano()
 		updateTokenBucket = func(bucketSize float64, setExpiration bool) {
-			bucket := tokenBucket{
+			bucket := memoryTokenBucket{
 				lastRefillUnixNano: now,
 				bucketSize:         bucketSize,
 			}
@@ -82,7 +82,7 @@ func (m *MemoryStorage) CheckAndUpdateTokenBucket(
 	)
 
 	slog.Debug("looking for bucket with", "key", key)
-	match, ok := m.db[key].(tokenBucket)
+	match, ok := m.db[key].(memoryTokenBucket)
 	if !ok { // if no token_bucket match the key create one
 		bucketSize := float64(capacity) - m.requestCost
 		slog.Debug("creating new token bucket", "key", key, "bucketSize", bucketSize)
@@ -114,7 +114,7 @@ func (m *MemoryStorage) CheckAndUpdateLeakyBucket(
 	var (
 		now               = time.Now().UnixNano()
 		updateLeakyBucket = func(bucketSize float64, setExpiration bool) {
-			bucket := leakyBucket{
+			bucket := memoryLeakyBucket{
 				lastLeakUnixNano: now,
 				bucketSize:       bucketSize,
 			}
@@ -127,7 +127,7 @@ func (m *MemoryStorage) CheckAndUpdateLeakyBucket(
 	)
 
 	slog.Debug("looking for bucket with", "key", key)
-	match, ok := m.db[key].(leakyBucket)
+	match, ok := m.db[key].(memoryLeakyBucket)
 	if !ok { // if no leaky_bucket match the key create one
 		bucketSize := m.requestCost
 		slog.Debug("creating new leaky bucket", "key", key, "bucketSize", bucketSize)

@@ -40,7 +40,7 @@ func TestMemoryStorage_CheckAndUpdateLeakyBucket(t *testing.T) {
 			id:  "Allow request because the bucket is not full yet",
 			key: "leaky:john",
 			db: map[string]any{
-				"leaky:john": leakyBucket{
+				"leaky:john": memoryLeakyBucket{
 					lastLeakUnixNano: time.Now().Add(-10 * time.Microsecond).UnixNano(),
 					bucketSize:       1,
 				},
@@ -51,7 +51,7 @@ func TestMemoryStorage_CheckAndUpdateLeakyBucket(t *testing.T) {
 			id:  "Disallow request because the bucket is full",
 			key: "leaky:john",
 			db: map[string]any{
-				"leaky:john": leakyBucket{
+				"leaky:john": memoryLeakyBucket{
 					lastLeakUnixNano: time.Now().Add(-10 * time.Microsecond).UnixNano(),
 					bucketSize:       2,
 				},
@@ -62,7 +62,7 @@ func TestMemoryStorage_CheckAndUpdateLeakyBucket(t *testing.T) {
 			id:  "Allow request because the bucket bucketSize have been consumed enough due to elapsed time rule",
 			key: "leaky:john",
 			db: map[string]any{
-				"leaky:john": leakyBucket{
+				"leaky:john": memoryLeakyBucket{
 					lastLeakUnixNano: time.Now().Add(-1 * time.Second).UnixNano(),
 					bucketSize:       2,
 				},
@@ -111,7 +111,7 @@ func TestMemoryStorage_CheckAndUpdateTokenBucket(t *testing.T) {
 			id:  "Allow request because the bucket is not empty yet",
 			key: "token_bucket:john",
 			db: map[string]any{
-				"token_bucket:john": tokenBucket{
+				"token_bucket:john": memoryTokenBucket{
 					lastRefillUnixNano: time.Now().Add(-10 * time.Microsecond).UnixNano(),
 					bucketSize:         1,
 				},
@@ -122,7 +122,7 @@ func TestMemoryStorage_CheckAndUpdateTokenBucket(t *testing.T) {
 			id:  "Disallow request because the bucket is empty",
 			key: "token_bucket:john",
 			db: map[string]any{
-				"token_bucket:john": tokenBucket{
+				"token_bucket:john": memoryTokenBucket{
 					lastRefillUnixNano: time.Now().Add(-10 * time.Microsecond).UnixNano(),
 					bucketSize:         0,
 				},
@@ -133,7 +133,7 @@ func TestMemoryStorage_CheckAndUpdateTokenBucket(t *testing.T) {
 			id:  "Allow request because the bucket have been refilled with enough bucketSize due to elapsed time rule",
 			key: "token_bucket:john",
 			db: map[string]any{
-				"token_bucket:john": tokenBucket{
+				"token_bucket:john": memoryTokenBucket{
 					lastRefillUnixNano: time.Now().Add(-1 * time.Second).UnixNano(),
 					bucketSize:         0,
 				},
@@ -165,7 +165,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 
 		// Set up bucket with exactly 1.0 bucketSize
 		key := "token:boundary"
-		storage.db[key] = tokenBucket{
+		storage.db[key] = memoryTokenBucket{
 			lastRefillUnixNano: time.Now().UnixNano(),
 			bucketSize:         1.0,
 		}
@@ -176,7 +176,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		assert.True(t, ok, "Should allow request when bucketSize exactly equals requestCost")
 
 		// Verify bucketSize were consumed
-		bucket := storage.db[key].(tokenBucket)
+		bucket := storage.db[key].(memoryTokenBucket)
 		assert.Equal(t, 0.0, bucket.bucketSize, "bucketSize should be 0 after consuming exactly 1.0")
 	})
 
@@ -215,7 +215,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		refillRate := 100.0 // Very high refill rate
 
 		// Set up bucket with some bucketSize, long time ago
-		storage.db[key] = tokenBucket{
+		storage.db[key] = memoryTokenBucket{
 			lastRefillUnixNano: time.Now().Add(-10 * time.Second).UnixNano(),
 			bucketSize:         5.0,
 		}
@@ -226,7 +226,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		assert.True(t, ok)
 
 		// bucketSize should be capped at capacity-1 (after consuming 1)
-		bucket := storage.db[key].(tokenBucket)
+		bucket := storage.db[key].(memoryTokenBucket)
 		assert.LessOrEqual(t, bucket.bucketSize, float64(capacity), "bucketSize should not exceed capacity")
 	})
 
@@ -317,7 +317,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		assert.True(t, ok, "Request should success")
 
 		storage.mu.Lock()
-		bucket, _ := storage.db[key].(tokenBucket)
+		bucket, _ := storage.db[key].(memoryTokenBucket)
 		storage.mu.Unlock()
 		assert.Equal(t, 0.0, bucket.bucketSize, "Bucket size should be decremented")
 
@@ -342,7 +342,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		maxTokens := 2
 
 		// Set up bucket with maxTokens-1 tokens
-		storage.db[key] = leakyBucket{
+		storage.db[key] = memoryLeakyBucket{
 			lastLeakUnixNano: time.Now().UnixNano(),
 			bucketSize:       1.0,
 		}
@@ -353,7 +353,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		assert.True(t, ok, "Should allow request when result equals capacity")
 
 		// Verify bucket is now at capacity
-		bucket := storage.db[key].(leakyBucket)
+		bucket := storage.db[key].(memoryLeakyBucket)
 		assert.Equal(t, 2.0, bucket.bucketSize, "Bucket should be at capacity (2.0)")
 	})
 
@@ -369,7 +369,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, ok)
 
-		bucket := storage.db[key].(leakyBucket)
+		bucket := storage.db[key].(memoryLeakyBucket)
 		assert.Equal(t, 1.0, bucket.bucketSize, "First request should add 1 token")
 
 		// Second request immediately
@@ -377,7 +377,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, ok)
 
-		bucket = storage.db[key].(leakyBucket)
+		bucket = storage.db[key].(memoryLeakyBucket)
 		assert.Equal(t, 2.0, bucket.bucketSize, "Second request should increase to 2 bucketSize")
 
 		// Third request
@@ -385,7 +385,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, ok)
 
-		bucket = storage.db[key].(leakyBucket)
+		bucket = storage.db[key].(memoryLeakyBucket)
 		assert.Equal(t, 3.0, bucket.bucketSize, "Third request should increase to 3 bucketSize")
 	})
 
@@ -397,7 +397,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		leakRate := 2.0 // 2 bucketSize per second
 
 		// Fill bucket to capacity
-		storage.db[key] = leakyBucket{
+		storage.db[key] = memoryLeakyBucket{
 			lastLeakUnixNano: time.Now().Add(-1 * time.Second).UnixNano(),
 			bucketSize:       5.0,
 		}
@@ -408,7 +408,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, ok, "Request should succeed after leak drains bucket")
 
-		bucket := storage.db[key].(leakyBucket)
+		bucket := storage.db[key].(memoryLeakyBucket)
 		// After leak (5 - 2 = 3) and adding request (3 + 1 = 4)
 		assert.InDelta(t, 4.0, bucket.bucketSize, 0.1, "Bucket should have ~4 bucketSize after leak and request")
 	})
@@ -420,7 +420,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		leakRate := 10.0 // Very high leak rate
 
 		// Set up bucket with 1 token, long time ago
-		storage.db[key] = leakyBucket{
+		storage.db[key] = memoryLeakyBucket{
 			lastLeakUnixNano: time.Now().Add(-10 * time.Second).UnixNano(),
 			bucketSize:       1.0,
 		}
@@ -430,7 +430,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, ok)
 
-		bucket := storage.db[key].(leakyBucket)
+		bucket := storage.db[key].(memoryLeakyBucket)
 		assert.GreaterOrEqual(t, bucket.bucketSize, 0.0, "bucketSize should never be negative")
 	})
 
