@@ -2,19 +2,30 @@ package rate_limiter
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	_ "embed"
 	"github.com/redis/go-redis/v9"
-	"github/martinmaurice/rlim/pkg/enum"
 	"github/martinmaurice/rlim/pkg/env"
-	"os"
+	"log/slog"
 	"time"
 )
 
-const (
-	tokenBucketAlgorithmRedisLuaScriptPath = "scripts/redis_lua/token_bucket.lua"
-	leakyBucketAlgorithmRedisLuaScriptPath = "scripts/redis_lua/leaky_bucket.lua"
+var (
+	//go:embed redis_lua/redis_token_bucket.lua
+	redisTokenBucketLua string
+
+	//go:embed redis_lua/redis_leaky_bucket.lua
+	redisLeakyBucketLua string
 )
+
+type redisTokenBucket struct {
+	lastRefillUnix int64
+	bucketSize     float64
+}
+
+type redisLeakyBucket struct {
+	lastLeakUnix int64
+	bucketSize   float64
+}
 
 type RedisStorage struct {
 	dB *redis.Client
@@ -32,32 +43,8 @@ func NewRedis() Storer {
 	}
 }
 
-func (r *RedisStorage) readLuaScriptSource(algorithm enum.Algorithm) (string, error) {
-	var scriptPath string
-	switch algorithm {
-	case enum.TokenBucket:
-		scriptPath = tokenBucketAlgorithmRedisLuaScriptPath
-	case enum.LeakyBucket:
-		scriptPath = leakyBucketAlgorithmRedisLuaScriptPath
-	default:
-		return "", errors.New(fmt.Sprintf("unknown algorithm %v", algorithm))
-	}
-
-	b, err := os.ReadFile(scriptPath)
-	if err != nil {
-		return "", err
-	}
-
-	return string(b), nil
-}
-
 func (r *RedisStorage) CheckAndUpdateTokenBucket(key string, capacity int, refillRate float64, expiresIn time.Duration) (bool, error) {
-	scriptSource, err := r.readLuaScriptSource(enum.TokenBucket)
-	if err != nil {
-		return false, err
-	}
-
-	script := redis.NewScript(scriptSource)
+	script := redis.NewScript(redisTokenBucketLua)
 	keys := []string{key}
 
 	result, err := script.Run(
@@ -68,25 +55,20 @@ func (r *RedisStorage) CheckAndUpdateTokenBucket(key string, capacity int, refil
 		refillRate,
 		expiresIn,
 		time.Now().Unix(),
-	).Result()
+	).Int64Slice()
 	if err != nil {
 		return false, err
 	}
 
-	ok := result.([]interface{})[0].(int64)
-	remainingTokens := result.([]interface{})[1].(int64)
+	ok := result[0]
+	bucketSize := result[1]
 
-	fmt.Printf("[TokenBucket] resetAt: %v, ok: %v - remainingTokens: %v\n", expiresIn, ok, remainingTokens)
+	slog.Debug("token bucket", "ok", ok, "bucket_size", bucketSize)
 	return ok > 0, nil
 }
 
 func (r *RedisStorage) CheckAndUpdateLeakyBucket(key string, capacity int, leakRate float64, expiresIn time.Duration) (bool, error) {
-	scriptSource, err := r.readLuaScriptSource(enum.LeakyBucket)
-	if err != nil {
-		return false, err
-	}
-
-	script := redis.NewScript(scriptSource)
+	script := redis.NewScript(redisLeakyBucketLua)
 	keys := []string{key}
 
 	result, err := script.Run(
@@ -97,14 +79,14 @@ func (r *RedisStorage) CheckAndUpdateLeakyBucket(key string, capacity int, leakR
 		leakRate,
 		expiresIn,
 		time.Now().Unix(),
-	).Result()
+	).Int64Slice()
 	if err != nil {
 		return false, err
 	}
 
-	ok := result.([]interface{})[0].(int64)
-	remainingTokens := result.([]interface{})[1].(int64)
+	ok := result[0]
+	bucketSize := result[1]
 
-	fmt.Printf("[Leakybucket] resetAt: %v, ok: %v - bucketSize: %v\n", expiresIn, ok, remainingTokens)
+	slog.Debug("token bucket", "ok", ok, "bucket_size", bucketSize)
 	return ok > 0, nil
 }
