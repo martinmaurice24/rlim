@@ -1,6 +1,7 @@
 package rate_limiter
 
 import (
+	"context"
 	"fmt"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -136,7 +137,7 @@ func TestRedisStorage_CheckAndUpdateLeakyBucket(t *testing.T) {
 		_, storage := newTestRedisStorage(t, tt.db)
 
 		t.Run(tt.id, func(t *testing.T) {
-			ok, err := storage.CheckAndUpdateLeakyBucket(
+			ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(),
 				tt.key,
 				capacity,
 				leakRate,
@@ -211,7 +212,7 @@ func TestStorageRedis_CheckAndUpdateTokenBucket(t *testing.T) {
 		_, storage := newTestRedisStorage(t, tt.db)
 
 		t.Run(tt.id, func(t *testing.T) {
-			ok, err := storage.CheckAndUpdateTokenBucket(
+			ok, err := storage.CheckAndUpdateTokenBucket(context.Background(),
 				tt.key,
 				capacity,
 				refillRate,
@@ -238,7 +239,7 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 		mr, storage := newTestRedisStorage(t, db)
 
 		// Should allow request when bucketSize exactly equals requestCost
-		ok, err := storage.CheckAndUpdateTokenBucket(key, 10, 1.0, time.Hour)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, 10, 1.0, time.Hour)
 		assertAllowed(t, ok, err, "Should allow request when bucketSize exactly equals requestCost")
 
 		// Verify bucketSize were consumed
@@ -252,13 +253,13 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 		capacity := 5
 		refillRate := 10.0 // 10 bucketSize per second
 
-		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, time.Hour)
 		assertAllowed(t, ok, err, "First request should succeed")
 
 		// Rapid sequential requests without time gap
 		successCount := 1
 		for i := 0; i < 10; i++ {
-			ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
+			ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, time.Hour)
 			require.NoError(t, err)
 			if ok {
 				successCount++
@@ -283,7 +284,7 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 
 		mr, storage := newTestRedisStorage(t, db)
 
-		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, time.Hour)
 		assertAllowed(t, ok, err, "Request should succeed")
 
 		bucketSize := getBucketSize(t, mr, key)
@@ -305,13 +306,13 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 			},
 		})
 
-		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, time.Hour)
 		assertAllowed(t, ok, err, "First request must be allowed given current config")
 
-		ok, err = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
+		ok, err = storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, time.Hour)
 		assertAllowed(t, ok, err, "Second request must be allowed given current config")
 
-		ok, err = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
+		ok, err = storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, time.Hour)
 		assertNotAllowed(t, ok, err, "Should deny request when refill rate is 0")
 	})
 
@@ -328,7 +329,7 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 		// Launch 20 concurrent requests
 		for i := 0; i < 20; i++ {
 			wg.Go(func() {
-				ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, time.Hour)
+				ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, time.Hour)
 				require.NoError(t, err)
 				if ok {
 					countMutex.Lock()
@@ -353,7 +354,7 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 		expiresIn := time.Millisecond * 10
 
 		// WHEN we check request allowance with given config on top
-		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, expiresIn)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, expiresIn)
 		assertAllowed(t, ok, err, "Request should success")
 
 		// The bucket which initially contains 1 token is left with no tokens
@@ -372,7 +373,7 @@ func TestRedisStorage_TokenBucket_EdgeCases(t *testing.T) {
 		assert.False(t, mr.Exists(key))
 
 		// AND when we check the request allowance again, it allowed for the same reason describe on top
-		ok, err = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, expiresIn)
+		ok, err = storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, expiresIn)
 		assertAllowed(t, ok, err, "Request should success because previous bucket was removed")
 	})
 }
@@ -394,7 +395,7 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		mr, storage := newTestRedisStorage(t, db)
 
 		// WHEN we check for the request allowance
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "Should allow request when result equals capacity")
 
 		// THEN bucket size must have been incremented with one token
@@ -408,19 +409,19 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		maxTokens := 5
 		leakRate := 0.5 // 0.5 tokens per second
 
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, time.Hour)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "First request - creates bucket with 1 token")
 
 		assertBucketSize(t, mr, key, 1.0, "First request should add 1 token")
 
 		// Second request immediately
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, time.Hour)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "")
 
 		assertBucketSize(t, mr, key, 2.0, "Second request should increase to 2 bucketSize")
 
 		// Third request
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, time.Hour)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "")
 
 		assertBucketSize(t, mr, key, 3.0, "Third request should increase to 3 bucketSize")
@@ -443,7 +444,7 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 
 		// After 1 second, 2 tokens should have leaked
 		// So bucket should have 3 tokens, allowing a request
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, time.Hour)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "Request should succeed after leak drains bucket")
 
 		// A request being allowed the bucket is filled with one more token
@@ -466,7 +467,7 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		mr, storage := newTestRedisStorage(t, db)
 
 		// After 10 seconds with leak rate 10, all bucketSize should have leaked
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "")
 
 		assertBucketSize(t, mr, key, 1.0, "bucketSize should never be negative")
@@ -488,15 +489,15 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		_, storage := newTestRedisStorage(t, db)
 
 		// First request
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "")
 
 		// Second request
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "")
 
 		// Third request should fail - bucket full and no leak
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertNotAllowed(t, ok, err, "Should deny request when bucket is full and leak rate is 0")
 	})
 
@@ -514,7 +515,7 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		// Launch 20 concurrent requests
 		for i := 0; i < 20; i++ {
 			wg.Go(func() {
-				ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+				ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 				require.NoError(t, err)
 				if ok {
 					countMutex.Lock()
@@ -539,19 +540,19 @@ func TestRedisStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		leakRate := 0.001 // Very slow leak
 
 		// Fill bucket
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "")
 
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertAllowed(t, ok, err, "")
 
 		// Bucket should be full now
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertNotAllowed(t, ok, err, "Bucket should be full")
 
 		// Even after short wait, minimal leak occurred
 		time.Sleep(10 * time.Millisecond)
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, capacity, leakRate, time.Hour)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, capacity, leakRate, time.Hour)
 		assertNotAllowed(t, ok, err, "Bucket should still be full with slow leak rate")
 	})
 }

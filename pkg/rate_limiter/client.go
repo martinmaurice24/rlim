@@ -1,6 +1,7 @@
 package rate_limiter
 
 import (
+	"context"
 	"fmt"
 	"github/martinmaurice/rlim/pkg/config"
 	"github/martinmaurice/rlim/pkg/enum"
@@ -10,7 +11,7 @@ import (
 )
 
 type Servicer interface {
-	CheckRateLimit(key string, rateLimitersId string) (string, bool)
+	CheckRateLimit(ctx context.Context, key string, rateLimitersId string) (string, bool)
 }
 
 type rateLimiterWithID struct {
@@ -22,33 +23,6 @@ type Client struct {
 	rateStorage  Storer
 	cfg          *config.Config
 	rateLimiters map[string][]rateLimiterWithID
-}
-
-type ClientOptions struct {
-	UseMemoryStorage bool
-}
-
-func New(options *ClientOptions) *Client {
-	slog.Info(
-		"creating new rate limiter client instance",
-		"useMemoryStorage", options.UseMemoryStorage,
-	)
-	var c Client
-	c.cfg = config.GetConfig()
-
-	if options.UseMemoryStorage {
-		slog.Debug("creating the client with memory storage")
-		c.rateStorage = NewMemoryStorage()
-	} else {
-		slog.Debug("creating the client with redis storage")
-		c.rateStorage = NewRedis()
-	}
-
-	c.setTierRateLimiters()
-
-	slog.Debug("rate limiter client created", "client", c)
-
-	return &c
 }
 
 func (c *Client) newRateLimiter(rateLimiterConfig config.RateLimiterConfig) RateLimiter {
@@ -86,9 +60,9 @@ func (c *Client) setTierRateLimiters() {
 	}
 }
 
-func (c *Client) checkRateLimit(key string, rateLimiter RateLimiter) bool {
+func (c *Client) checkRateLimit(ctx context.Context, key string, rateLimiter RateLimiter) bool {
 	slog.Debug("checkRateLimit", "key", key, "rateLimiter", rateLimiter)
-	ok, err := rateLimiter.Allow(key)
+	ok, err := rateLimiter.Allow(ctx, key)
 	if err != nil {
 		slog.Error("unexpected error while checking request against rate limit", "error", err)
 		return false
@@ -100,7 +74,7 @@ func (c *Client) checkRateLimit(key string, rateLimiter RateLimiter) bool {
 	return true
 }
 
-func (c *Client) CheckRateLimit(key, rateLimitersId string) (string, bool) {
+func (c *Client) CheckRateLimit(ctx context.Context, key, rateLimitersId string) (string, bool) {
 	slog.Info("checking rate limit", "key", key, "rateLimitersId", rateLimitersId)
 
 	if key == "" || rateLimitersId == "" {
@@ -121,7 +95,7 @@ func (c *Client) CheckRateLimit(key, rateLimitersId string) (string, bool) {
 			"rateLimiterId", rl.id,
 		)
 
-		if c.checkRateLimit(finalKey, rl.rl) == false {
+		if c.checkRateLimit(ctx, finalKey, rl.rl) == false {
 			slog.Debug(
 				"request rejected by one of the rate limiter",
 				"key", finalKey,
@@ -132,4 +106,31 @@ func (c *Client) CheckRateLimit(key, rateLimitersId string) (string, bool) {
 	}
 
 	return finalKeyPrefix, true
+}
+
+type ClientOptions struct {
+	UseMemoryStorage bool
+}
+
+func New(options *ClientOptions) *Client {
+	slog.Info(
+		"creating new rate limiter client instance",
+		"useMemoryStorage", options.UseMemoryStorage,
+	)
+	var c Client
+	c.cfg = config.GetConfig()
+
+	if options.UseMemoryStorage {
+		slog.Debug("creating the client with memory storage")
+		c.rateStorage = NewMemoryStorage()
+	} else {
+		slog.Debug("creating the client with redis storage")
+		c.rateStorage = NewRedis()
+	}
+
+	c.setTierRateLimiters()
+
+	slog.Debug("rate limiter client created", "client", c)
+
+	return &c
 }

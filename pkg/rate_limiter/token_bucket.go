@@ -1,9 +1,12 @@
 package rate_limiter
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type TokenBucketHandler interface {
-	CheckAndUpdateTokenBucket(key string, capacity int, refillRate float64, expiresIn time.Duration) (bool, error)
+	CheckAndUpdateTokenBucket(ctx context.Context, key string, capacity int, refillRate float64, expiresIn time.Duration) (bool, error)
 }
 
 type TokenBucket struct {
@@ -18,6 +21,6 @@ func NewTokenBucket(handler TokenBucketHandler, options *TokenBucket) RateLimite
 	return options
 }
 
-func (tb *TokenBucket) Allow(key string) (bool, error) {
-	return tb.rateLimitHandler.CheckAndUpdateTokenBucket(key, tb.Capacity, tb.RefillRate, tb.ExpiresIn)
+func (tb *TokenBucket) Allow(ctx context.Context, key string) (bool, error) {
+	return tb.rateLimitHandler.CheckAndUpdateTokenBucket(ctx, key, tb.Capacity, tb.RefillRate, tb.ExpiresIn)
 }

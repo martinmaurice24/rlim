@@ -1,6 +1,7 @@
 package rate_limiter
 
 import (
+	"context"
 	"log/slog"
 	"math"
 	"sync"
@@ -59,6 +60,7 @@ func (m *MemoryStorage) removeExpiredBucket(tickerDuration time.Duration, stop <
 }
 
 func (m *MemoryStorage) CheckAndUpdateTokenBucket(
+	ctx context.Context,
 	key string,
 	capacity int,
 	refillRate float64,
@@ -104,6 +106,7 @@ func (m *MemoryStorage) CheckAndUpdateTokenBucket(
 }
 
 func (m *MemoryStorage) CheckAndUpdateLeakyBucket(
+	ctx context.Context,
 	key string,
 	maxTokens int,
 	leakRate float64,

@@ -1,9 +1,12 @@
 package rate_limiter
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type LeakyBucketHandler interface {
-	CheckAndUpdateLeakyBucket(key string, capacity int, leakRate float64, expiresIn time.Duration) (bool, error)
+	CheckAndUpdateLeakyBucket(ctx context.Context, key string, capacity int, leakRate float64, expiresIn time.Duration) (bool, error)
 }
 
 type LeakyBucket struct {
@@ -18,6 +21,6 @@ func NewLeakyBucket(handler LeakyBucketHandler, options *LeakyBucket) RateLimite
 	return options
 }
 
-func (lb *LeakyBucket) Allow(key string) (bool, error) {
-	return lb.rateLimitHandler.CheckAndUpdateLeakyBucket(key, lb.Capacity, lb.LeakRate, lb.ExpiresIn)
+func (lb *LeakyBucket) Allow(ctx context.Context, key string) (bool, error) {
+	return lb.rateLimitHandler.CheckAndUpdateLeakyBucket(ctx, key, lb.Capacity, lb.LeakRate, lb.ExpiresIn)
 }

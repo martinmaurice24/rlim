@@ -1,6 +1,7 @@
 package rate_limiter
 
 import (
+	"context"
 	"github.com/stretchr/testify/assert"
 	"github/martinmaurice/rlim/pkg/config"
 	"github/martinmaurice/rlim/pkg/enum"
@@ -100,7 +101,7 @@ func TestClient_CheckRateLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key, allowed := c.CheckRateLimit(tt.key, tt.rateLimitersId)
+			key, allowed := c.CheckRateLimit(context.Background(), tt.key, tt.rateLimitersId)
 			assert.Equal(t, tt.expectedKey, key)
 			assert.Equalf(
 				t,

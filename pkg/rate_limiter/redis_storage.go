@@ -43,7 +43,7 @@ func NewRedis() Storer {
 	}
 }
 
-func (r *RedisStorage) CheckAndUpdateTokenBucket(key string, capacity int, refillRate float64, expiresIn time.Duration) (bool, error) {
+func (r *RedisStorage) CheckAndUpdateTokenBucket(ctx context.Context, key string, capacity int, refillRate float64, expiresIn time.Duration) (bool, error) {
 	script := redis.NewScript(redisTokenBucketLua)
 	keys := []string{key}
 
@@ -67,7 +67,7 @@ func (r *RedisStorage) CheckAndUpdateTokenBucket(key string, capacity int, refil
 	return ok > 0, nil
 }
 
-func (r *RedisStorage) CheckAndUpdateLeakyBucket(key string, capacity int, leakRate float64, expiresIn time.Duration) (bool, error) {
+func (r *RedisStorage) CheckAndUpdateLeakyBucket(ctx context.Context, key string, capacity int, leakRate float64, expiresIn time.Duration) (bool, error) {
 	script := redis.NewScript(redisLeakyBucketLua)
 	keys := []string{key}
 

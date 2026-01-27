@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"log/slog"
@@ -8,15 +9,15 @@ import (
 )
 
 type RateLimitMiddlewareServicer interface {
-	CheckRateLimit(key string, tier string) (string, bool)
+	CheckRateLimit(ctx context.Context, key string, tier string) (string, bool)
 }
 
 const (
 	DefaultRateLimitersId = "default"
 )
 
-func checkRateLimit(servicer RateLimitMiddlewareServicer, key, rateLimiterId string) bool {
-	_, ok := servicer.CheckRateLimit(key, rateLimiterId)
+func checkRateLimit(ctx context.Context, servicer RateLimitMiddlewareServicer, key, rateLimiterId string) bool {
+	_, ok := servicer.CheckRateLimit(ctx, key, rateLimiterId)
 	if ok {
 		slog.Info("Request allowed", "key", key, "rate_limiter_id", rateLimiterId)
 		return true
@@ -37,7 +38,7 @@ func RateLimitAnonymousUserMiddleware(servicer RateLimitMiddlewareServicer) gin.
 
 		// forge rate limit key prefix using the ip (you could have used something different)
 		key := fmt.Sprintf("anonymous:%s", c.ClientIP())
-		if ok := checkRateLimit(servicer, key, DefaultRateLimitersId); ok {
+		if ok := checkRateLimit(c, servicer, key, DefaultRateLimitersId); ok {
 			c.Next()
 			return
 		}
@@ -66,7 +67,7 @@ func RateLimitAuthenticatedUserBasedOnTierMiddleware(servicer RateLimitMiddlewar
 		// forge the rate limit bucket key prefix
 		// and check whether the request is allowed
 		key := fmt.Sprintf("auth:%s", c.GetHeader(apiKeyHeader))
-		if ok := checkRateLimit(servicer, key, tier.(string)); ok {
+		if ok := checkRateLimit(c, servicer, key, tier.(string)); ok {
 			c.Next()
 			return
 		}

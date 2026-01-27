@@ -1,6 +1,7 @@
 package rate_limiter
 
 import (
+	"context"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"sync"
@@ -76,7 +77,7 @@ func TestMemoryStorage_CheckAndUpdateLeakyBucket(t *testing.T) {
 		storage.db = tt.db
 
 		t.Run(tt.id, func(t *testing.T) {
-			ok, err := storage.CheckAndUpdateLeakyBucket(
+			ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(),
 				tt.key,
 				maxTokens,
 				leakRate,
@@ -147,7 +148,7 @@ func TestMemoryStorage_CheckAndUpdateTokenBucket(t *testing.T) {
 		storage.db = tt.db
 
 		t.Run(tt.id, func(t *testing.T) {
-			ok, err := storage.CheckAndUpdateTokenBucket(
+			ok, err := storage.CheckAndUpdateTokenBucket(context.Background(),
 				tt.key,
 				capacity,
 				refillRate,
@@ -171,7 +172,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		}
 
 		// Should allow request when bucketSize exactly equals requestCost
-		ok, err := storage.CheckAndUpdateTokenBucket(key, 10, 1.0, 0)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, 10, 1.0, 0)
 		require.NoError(t, err)
 		assert.True(t, ok, "Should allow request when bucketSize exactly equals requestCost")
 
@@ -188,14 +189,14 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		refillRate := 10.0 // 10 bucketSize per second
 
 		// First request - should create bucket with capacity-1 bucketSize
-		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, 0)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, 0)
 		require.NoError(t, err)
 		assert.True(t, ok, "First request should succeed")
 
 		// Rapid sequential requests without time gap
 		successCount := 1
 		for i := 0; i < 10; i++ {
-			ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, 0)
+			ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, 0)
 			require.NoError(t, err)
 			if ok {
 				successCount++
@@ -221,7 +222,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		}
 
 		// Request should succeed
-		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, 0)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, 0)
 		require.NoError(t, err)
 		assert.True(t, ok)
 
@@ -239,7 +240,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 
 		// Should allow multiple requests due to small cost
 		for i := 0; i < 5; i++ {
-			ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, 1.0, 0)
+			ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, 1.0, 0)
 			require.NoError(t, err)
 			assert.True(t, ok, "Request %d should succeed with small cost", i+1)
 		}
@@ -253,18 +254,18 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		refillRate := 0.0
 
 		// First request
-		ok, _ := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, 0)
+		ok, _ := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, 0)
 		assert.True(t, ok)
 
 		// Second request
-		ok, _ = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, 0)
+		ok, _ = storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, 0)
 		assert.True(t, ok)
 
 		// Wait some time
 		time.Sleep(100 * time.Millisecond)
 
 		// Third request should fail - no refill happened
-		ok, _ = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, 0)
+		ok, _ = storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, 0)
 		assert.False(t, ok, "Should deny request when refill rate is 0")
 	})
 
@@ -281,7 +282,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		// Launch 20 concurrent requests
 		for i := 0; i < 20; i++ {
 			wg.Go(func() {
-				ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, 0)
+				ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, 0)
 				require.NoError(t, err)
 				if ok {
 					countMutex.Lock()
@@ -312,7 +313,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		refillRate := 0.0
 		expiresIn := time.Millisecond * 10
 
-		ok, err := storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, expiresIn)
+		ok, err := storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, expiresIn)
 		require.NoError(t, err)
 		assert.True(t, ok, "Request should success")
 
@@ -327,7 +328,7 @@ func TestMemoryStorage_TokenBucket_EdgeCases(t *testing.T) {
 		assert.Nil(t, storage.db[key], "Bucket was removed because it expired")
 		storage.mu.Unlock()
 
-		ok, err = storage.CheckAndUpdateTokenBucket(key, capacity, refillRate, expiresIn)
+		ok, err = storage.CheckAndUpdateTokenBucket(context.Background(), key, capacity, refillRate, expiresIn)
 		require.NoError(t, err)
 		assert.True(t, ok, "Request should success because previous bucket was removed")
 
@@ -348,7 +349,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		}
 
 		// Should allow request that brings us exactly to capacity
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, 1.0, 0)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, 1.0, 0)
 		require.NoError(t, err)
 		assert.True(t, ok, "Should allow request when result equals capacity")
 
@@ -365,7 +366,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		leakRate := 0.5 // 0.5 tokens per second
 
 		// First request - creates bucket with 1 token
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		require.NoError(t, err)
 		assert.True(t, ok)
 
@@ -373,7 +374,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		assert.Equal(t, 1.0, bucket.bucketSize, "First request should add 1 token")
 
 		// Second request immediately
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		require.NoError(t, err)
 		assert.True(t, ok)
 
@@ -381,7 +382,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		assert.Equal(t, 2.0, bucket.bucketSize, "Second request should increase to 2 bucketSize")
 
 		// Third request
-		ok, err = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, err = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		require.NoError(t, err)
 		assert.True(t, ok)
 
@@ -404,7 +405,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 
 		// After 1 second, 2 bucketSize should have leaked
 		// So bucket should have 3 bucketSize, allowing a request
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		require.NoError(t, err)
 		assert.True(t, ok, "Request should succeed after leak drains bucket")
 
@@ -426,7 +427,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		}
 
 		// After 10 seconds with leak rate 10, all bucketSize should have leaked
-		ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		require.NoError(t, err)
 		assert.True(t, ok)
 
@@ -442,18 +443,18 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		leakRate := 0.0
 
 		// First request
-		ok, _ := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, _ := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		assert.True(t, ok)
 
 		// Second request
-		ok, _ = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, _ = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		assert.True(t, ok)
 
 		// Wait some time
 		time.Sleep(100 * time.Millisecond)
 
 		// Third request should fail - bucket full and no leak
-		ok, _ = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, _ = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		assert.False(t, ok, "Should deny request when bucket is full and leak rate is 0")
 	})
 
@@ -471,7 +472,7 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		// Launch 20 concurrent requests
 		for i := 0; i < 20; i++ {
 			wg.Go(func() {
-				ok, err := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+				ok, err := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 				require.NoError(t, err)
 				if ok {
 					countMutex.Lock()
@@ -495,19 +496,19 @@ func TestMemoryStorage_LeakyBucket_EdgeCases(t *testing.T) {
 		leakRate := 0.001 // Very slow leak
 
 		// Fill bucket
-		ok, _ := storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, _ := storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		assert.True(t, ok)
 
-		ok, _ = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, _ = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		assert.True(t, ok)
 
 		// Bucket should be full now
-		ok, _ = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, _ = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		assert.False(t, ok, "Bucket should be full")
 
 		// Even after short wait, minimal leak occurred
 		time.Sleep(10 * time.Millisecond)
-		ok, _ = storage.CheckAndUpdateLeakyBucket(key, maxTokens, leakRate, 0)
+		ok, _ = storage.CheckAndUpdateLeakyBucket(context.Background(), key, maxTokens, leakRate, 0)
 		assert.False(t, ok, "Bucket should still be full with slow leak rate")
 	})
 }
@@ -525,8 +526,8 @@ func TestMemoryStorage_AlgorithmBehaviorComparison(t *testing.T) {
 
 		// Burst of requests
 		for i := 0; i < 10; i++ {
-			okToken, _ := tokenStorage.CheckAndUpdateTokenBucket("token:burst", capacity, rate, 0)
-			okLeaky, _ := leakyStorage.CheckAndUpdateLeakyBucket("leaky:burst", capacity, rate, 0)
+			okToken, _ := tokenStorage.CheckAndUpdateTokenBucket(context.Background(), "token:burst", capacity, rate, 0)
+			okLeaky, _ := leakyStorage.CheckAndUpdateLeakyBucket(context.Background(), "leaky:burst", capacity, rate, 0)
 
 			if okToken {
 				tokenSuccessCount++
@@ -541,8 +542,8 @@ func TestMemoryStorage_AlgorithmBehaviorComparison(t *testing.T) {
 		assert.Equal(t, capacity, leakySuccessCount, "Leaky bucket should also respect capacity")
 
 		// After capacity is exhausted/filled, both should deny
-		okToken, _ := tokenStorage.CheckAndUpdateTokenBucket("token:burst", capacity, rate, 0)
-		okLeaky, _ := leakyStorage.CheckAndUpdateLeakyBucket("leaky:burst", capacity, rate, 0)
+		okToken, _ := tokenStorage.CheckAndUpdateTokenBucket(context.Background(), "token:burst", capacity, rate, 0)
+		okLeaky, _ := leakyStorage.CheckAndUpdateLeakyBucket(context.Background(), "leaky:burst", capacity, rate, 0)
 
 		assert.False(t, okToken, "Token bucket should deny after exhausting bucketSize")
 		assert.False(t, okLeaky, "Leaky bucket should deny when full")
