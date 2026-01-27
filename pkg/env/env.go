@@ -22,6 +22,8 @@ type Specification struct {
 	RedisDb       int    `default:"0" split_words:"true"`
 	RedisPoolSize int    `default:"100" split_words:"true"`
 
+	UseMemoryStorage bool `default:"false" split_words:"true"`
+
 	ConfigFile string `default:"./config.yaml" split_words:"true"`
 }
 

@@ -65,7 +65,7 @@ func RateLimitAuthenticatedUserBasedOnTierMiddleware(servicer RateLimitMiddlewar
 
 		// forge the rate limit bucket key prefix
 		// and check whether the request is allowed
-		key := fmt.Sprintf("auth:%s:%s", tier, c.GetHeader(apiKeyHeader))
+		key := fmt.Sprintf("auth:%s", c.GetHeader(apiKeyHeader))
 		if ok := checkRateLimit(servicer, key, tier.(string)); ok {
 			c.Next()
 			return

@@ -24,15 +24,35 @@ type Client struct {
 	rateLimiters map[string][]rateLimiterWithID
 }
 
-func New() *Client {
+type ClientOptions struct {
+	UseMemoryStorage bool
+}
+
+func New(options *ClientOptions) *Client {
+	slog.Info(
+		"creating new rate limiter client instance",
+		"useMemoryStorage", options.UseMemoryStorage,
+	)
 	var c Client
 	c.cfg = config.GetConfig()
-	c.rateStorage = NewRedis()
+
+	if options.UseMemoryStorage {
+		slog.Debug("creating the client with memory storage")
+		c.rateStorage = NewMemoryStorage()
+	} else {
+		slog.Debug("creating the client with redis storage")
+		c.rateStorage = NewRedis()
+	}
+
 	c.setTierRateLimiters()
+
+	slog.Debug("rate limiter client created", "client", c)
+
 	return &c
 }
 
 func (c *Client) newRateLimiter(rateLimiterConfig config.RateLimiterConfig) RateLimiter {
+	slog.Debug("newRateLimiter", "ID", rateLimiterConfig.ID, "algorithm", rateLimiterConfig.Algorithm)
 	switch rateLimiterConfig.Algorithm {
 	case enum.TokenBucket:
 		return NewTokenBucket(c.rateStorage, &TokenBucket{
@@ -48,7 +68,7 @@ func (c *Client) newRateLimiter(rateLimiterConfig config.RateLimiterConfig) Rate
 		})
 
 	default:
-		log.Fatalf("Unknown rate limiter algoritm: %v", rateLimiterConfig.Algorithm)
+		log.Fatalf("Unknown rate limiter algorithm: %v", rateLimiterConfig.Algorithm)
 	}
 
 	return nil
@@ -67,9 +87,10 @@ func (c *Client) setTierRateLimiters() {
 }
 
 func (c *Client) checkRateLimit(key string, rateLimiter RateLimiter) bool {
+	slog.Debug("checkRateLimit", "key", key, "rateLimiter", rateLimiter)
 	ok, err := rateLimiter.Allow(key)
 	if err != nil {
-		slog.Error(fmt.Sprintf("unexpected error happened %v", err))
+		slog.Error("unexpected error while checking request against rate limit", "error", err)
 		return false
 	}
 	if ok == false {
@@ -80,15 +101,32 @@ func (c *Client) checkRateLimit(key string, rateLimiter RateLimiter) bool {
 }
 
 func (c *Client) CheckRateLimit(key, rateLimitersId string) (string, bool) {
+	slog.Info("checking rate limit", "key", key, "rateLimitersId", rateLimitersId)
+
 	if key == "" || rateLimitersId == "" {
+		slog.Debug(
+			"CheckRateLimit called with empty key or rateLimitersId",
+			"key", key,
+			"rateLimitersId", rateLimitersId,
+		)
 		return "", true
 	}
 
 	finalKeyPrefix := fmt.Sprintf("%s:%s", key, rateLimitersId)
 	for _, rl := range c.rateLimiters[rateLimitersId] {
 		finalKey := fmt.Sprintf("%s:%s", finalKeyPrefix, rl.id)
-		slog.Info("checking rate limit", "key", finalKey, "rateLimitersId", rateLimitersId)
+		slog.Debug(
+			"checking against",
+			"key", finalKey,
+			"rateLimiterId", rl.id,
+		)
+
 		if c.checkRateLimit(finalKey, rl.rl) == false {
+			slog.Debug(
+				"request rejected by one of the rate limiter",
+				"key", finalKey,
+				"rateLimiterID", rl.id,
+			)
 			return finalKeyPrefix, false
 		}
 	}
