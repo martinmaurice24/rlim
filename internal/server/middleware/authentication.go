@@ -1,6 +1,9 @@
 package middleware
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+	"log/slog"
+)
 
 type User struct {
 	ApiKey string
@@ -30,6 +33,7 @@ func AuthenticationMiddleware(c *gin.Context) {
 
 	for _, user := range users {
 		if user.ApiKey == apiKey {
+			slog.Debug("User is authenticated", "tier", user.Tier)
 			c.Set(TierContextKey, user.Tier)
 			c.Set(IsAuthenticatedContextValueKey, true)
 			break
