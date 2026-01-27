@@ -1,15 +1,37 @@
 package env
 
 import (
+	"errors"
 	"github.com/kelseyhightower/envconfig"
 	"log"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
 
+type logLevel slog.Level
+
+func (ll *logLevel) Decode(value string) error {
+	switch strings.ToLower(value) {
+	case "debug":
+		*ll = logLevel(slog.LevelDebug)
+	case "info":
+		*ll = logLevel(slog.LevelInfo)
+	case "warn":
+		*ll = logLevel(slog.LevelWarn)
+	case "error":
+		*ll = logLevel(slog.LevelError)
+
+	default:
+		return errors.New("log level value must be one of debug, info, warn, error")
+	}
+
+	return nil
+}
+
 type Specification struct {
-	Version int
+	Version string
 	Env     string `default:"production"`
 
 	ServerPort                 string        `default:":8080" split_words:"true"`
@@ -25,6 +47,9 @@ type Specification struct {
 	UseMemoryStorage bool `default:"false" split_words:"true"`
 
 	ConfigFile string `default:"./config.yaml" split_words:"true"`
+
+	AppName  string   `default:"rlim" split_words:"true"`
+	LogLevel logLevel `default:"debug" split_words:"true"`
 }
 
 var (

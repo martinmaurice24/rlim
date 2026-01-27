@@ -65,14 +65,7 @@ func (s *Config) Run() {
 		s.handler.Use(middleware.RateLimitAuthenticatedUserBasedOnTierMiddleware(s.servicer))
 	}
 
-	s.handler.GET("/health", func(c *gin.Context) {
-		reqArrivalTime, exists := c.Get(middleware.ReqArrivalTimeContextValueKey)
-		if exists {
-			queueTime := time.Since(reqArrivalTime.(time.Time)).Microseconds()
-			slog.Info("Queue Time (ms)", "queueTime", queueTime)
-		}
-		c.JSON(http.StatusOK, gin.H{"success": true})
-	})
+	s.handler.GET("/health", healthHandler)
 
 	s.handler.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
@@ -85,6 +78,7 @@ func (s *Config) Run() {
 	}
 
 	go func() {
+		slog.Info("starting the server", "port", s.port)
 		if err := srv.ListenAndServe(); err != nil {
 			log.Fatalf("Could not listen: %v", err)
 		}

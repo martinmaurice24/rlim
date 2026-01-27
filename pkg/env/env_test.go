@@ -46,7 +46,7 @@ func TestGetEnv_SpecificationIsValid(t *testing.T) {
 	setRequiredEnvVars(t)
 	envObj := GetEnv()
 
-	assert.Equal(t, envObj.Version, 1, "Version")
+	assert.Equal(t, envObj.Version, "1", "Version")
 	assert.Equal(t, envObj.Env, "test", "Env")
 	assert.Equal(t, envObj.ServerPort, ":8080", "Server Port")
 	assert.Equal(t, envObj.ServerWriteTimeoutInSecond, 10*time.Second, "Server Write Timeout")
